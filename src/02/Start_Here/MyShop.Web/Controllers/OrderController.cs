@@ -12,25 +12,24 @@ namespace MyShop.Web.Controllers
 {
     public class OrderController : Controller
     {
-        private readonly IRepository<Order> orderRepository;
-        private readonly IRepository<Product> productRepository;
+        private readonly IUnitOfWork unitOfWork;
+        
 
-        public OrderController(IRepository<Order> orderRepository, IRepository<Product> productRepository)
+        public OrderController(IUnitOfWork unitOfWork)
         {
-            this.orderRepository = orderRepository;
-            this.productRepository = productRepository;
+            this.unitOfWork = unitOfWork;
         }
 
         public IActionResult Index()
         {
-            var orders = orderRepository.Find(o => o.OrderDate > DateTime.UtcNow.AddDays(-1));
+            var orders = unitOfWork.OrderRepository.Find(o => o.OrderDate > DateTime.UtcNow.AddDays(-1));
 
             return View(orders);
         }
 
         public IActionResult Create()
         {
-            var products = productRepository.All();
+            var products = unitOfWork.ProductRepository.All();
 
             return View(products);
         }
@@ -38,18 +37,37 @@ namespace MyShop.Web.Controllers
         [HttpPost]
         public IActionResult Create(CreateOrderModel model)
         {
+          
+
             if (!model.LineItems.Any()) return BadRequest("Please submit line items");
 
             if (string.IsNullOrWhiteSpace(model.Customer.Name)) return BadRequest("Customer needs a name");
 
-            var customer = new Customer
+            var customer = unitOfWork.CustomerRepository
+                            .Find(c => c.Name == model.Customer.Name)
+                            .FirstOrDefault();
+
+            if(customer != null)
             {
-                Name = model.Customer.Name,
-                ShippingAddress = model.Customer.ShippingAddress,
-                City = model.Customer.City,
-                PostalCode = model.Customer.PostalCode,
-                Country = model.Customer.Country
-            };
+                customer.ShippingAddress = model.Customer.ShippingAddress;
+                customer.PostalCode = model.Customer.PostalCode;
+                customer.City = model.Customer.City;
+                customer.Country = model.Customer.Country;
+
+                unitOfWork.CustomerRepository.Update(customer);
+                unitOfWork.CustomerRepository.SaveChanges();
+            } else
+            {
+                 customer = new Customer
+                {
+                    Name = model.Customer.Name,
+                    ShippingAddress = model.Customer.ShippingAddress,
+                    City = model.Customer.City,
+                    PostalCode = model.Customer.PostalCode,
+                    Country = model.Customer.Country
+                };
+            }
+          
 
             var order = new Order
             {
@@ -60,9 +78,9 @@ namespace MyShop.Web.Controllers
                 Customer = customer
             };
 
-            orderRepository.Add(order);
+            unitOfWork.OrderRepository.Add(order);
 
-            orderRepository.SaveChanges();
+            unitOfWork.SaveChanges();
 
             return Ok("Order Created");
         }
